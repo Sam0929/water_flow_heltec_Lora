@@ -10,7 +10,7 @@
 const char* ssid = "SamuelWifi";
 const char* password = "zvn1829d";
 
-String serverURL = "http://192.168.X.X:8000/vazao";
+String serverURL = "http://10.62.13.163:8000/vazao";
 
 // ======================================================
 // OLED Heltec
@@ -226,7 +226,7 @@ void loop() {
     // ==================================================
     // ENVIO PARA SERVIDOR A CADA 5 SEGUNDOS
     // ==================================================
-    if (now - lastSendTime > 5000) {
+    if (now - lastSendTime > 100) {
 
       sendToServer(flowLMin, totalLiters);
       lastSendTime = now;
