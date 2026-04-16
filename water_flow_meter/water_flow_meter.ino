@@ -2,7 +2,8 @@
 #include "SSD1306Wire.h"
 #include "pins_arduino.h"
 #include <WiFi.h>
-#include <HTTPClient.h>
+#include <WiFiUdp.h>
+#include <coap-simple.h>
 
 // ======================================================
 // WIFI
@@ -10,12 +11,21 @@
 const char* ssid = "SamuelWifi";
 const char* password = "zvn1829d";
 
-String serverURL = "http://172.22.239.163:8000/vazao";
+// IP do backend CoAP
+IPAddress serverIP(172, 22, 239, 163);
+const uint16_t serverPort = 5683;
+const char* coapResource = "vazao";   // recurso CoAP: coap://172.22.239.163:5683/vazao
 
 // ======================================================
 // OLED Heltec
 // ======================================================
 SSD1306Wire display(0x3C, SDA_OLED, SCL_OLED);
+
+// ======================================================
+// CoAP
+// ======================================================
+WiFiUDP udp;
+Coap coap(udp);
 
 // ======================================================
 // Sensor YF-S201
@@ -25,8 +35,18 @@ volatile uint32_t pulseCount = 0;
 
 unsigned long lastMeasureTime = 0;
 unsigned long lastSendTime = 0;
+unsigned long lastWifiCheck = 0;
 
 float totalLiters = 0.0f;
+
+// Janela e suavização
+const uint8_t WINDOW_SIZE = 8; // 8 amostras de 250 ms = 2 s
+float flowWindow[WINDOW_SIZE] = {0};
+uint8_t flowIndex = 0;
+bool flowWindowFilled = false;
+
+float filteredFlow = 0.0f; // média móvel exponencial
+const float ALPHA = 0.30f;  // 0.0 = muito suave, 1.0 = sem filtro
 
 // ======================================================
 // Funções energia OLED
@@ -54,29 +74,136 @@ void IRAM_ATTR pulseCounter() {
 }
 
 // ======================================================
-// Envio para servidor
+// Utilitários
 // ======================================================
-void sendToServer(float flow, float total) {
+float readAndResetPulses() {
+  noInterrupts();
+  uint32_t pulses = pulseCount;
+  pulseCount = 0;
+  interrupts();
+  return (float)pulses;
+}
+
+void pushFlowSample(float value) {
+  flowWindow[flowIndex] = value;
+  flowIndex = (flowIndex + 1) % WINDOW_SIZE;
+  if (flowIndex == 0) {
+    flowWindowFilled = true;
+  }
+}
+
+float getFlowAverage() {
+  uint8_t count = flowWindowFilled ? WINDOW_SIZE : flowIndex;
+  if (count == 0) return 0.0f;
+
+  float sum = 0.0f;
+  for (uint8_t i = 0; i < count; i++) {
+    sum += flowWindow[i];
+  }
+  return sum / count;
+}
+
+float getFlowMin() {
+  uint8_t count = flowWindowFilled ? WINDOW_SIZE : flowIndex;
+  if (count == 0) return 0.0f;
+
+  float m = flowWindow[0];
+  for (uint8_t i = 1; i < count; i++) {
+    if (flowWindow[i] < m) m = flowWindow[i];
+  }
+  return m;
+}
+
+float getFlowMax() {
+  uint8_t count = flowWindowFilled ? WINDOW_SIZE : flowIndex;
+  if (count == 0) return 0.0f;
+
+  float m = flowWindow[0];
+  for (uint8_t i = 1; i < count; i++) {
+    if (flowWindow[i] > m) m = flowWindow[i];
+  }
+  return m;
+}
+
+// ======================================================
+// Envio CoAP
+// ======================================================
+void sendToServer(float rawFlow, float smoothedFlow, float total, float lph, uint32_t pulses, float avgWindow) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  // JSON compacto para reduzir payload no UDP
+  char payload[220];
+  snprintf(payload, sizeof(payload),
+           "{\"flow\":%.2f,\"smooth\":%.2f,\"avg\":%.2f,\"total\":%.3f,\"lph\":%.2f,\"pulses\":%lu}",
+           rawFlow, smoothedFlow, avgWindow, total, lph, (unsigned long)pulses);
+
+  // Envio não-confirmável para ficar mais leve e fluido
+  coap.send(
+    serverIP,
+    serverPort,
+    coapResource,
+    COAP_NON,
+    COAP_PUT,
+    nullptr,
+    0,
+    (const uint8_t*)payload,
+    strlen(payload),
+    COAP_APPLICATION_JSON
+  );
+
+  Serial.print("CoAP enviado: ");
+  Serial.println(payload);
+}
+
+// ======================================================
+// WiFi
+// ======================================================
+void ensureWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+
+  static bool reconnecting = false;
+
+  if (!reconnecting) {
+    reconnecting = true;
+    Serial.println("WiFi caiu, tentando reconectar...");
+    WiFi.disconnect();
+    WiFi.begin(ssid, password);
+  }
+
+  if (millis() - lastWifiCheck >= 3000) {
+    lastWifiCheck = millis();
+    Serial.print("Status WiFi: ");
+    Serial.println(WiFi.status());
+  }
 
   if (WiFi.status() == WL_CONNECTED) {
-
-    HTTPClient http;
-
-    http.begin(serverURL);
-    http.addHeader("Content-Type", "application/json");
-
-    String body = "{";
-    body += "\"flow\":" + String(flow, 2) + ",";
-    body += "\"total\":" + String(total, 3);
-    body += "}";
-
-    int code = http.POST(body);
-
-    Serial.print("HTTP Response: ");
-    Serial.println(code);
-
-    http.end();
+    reconnecting = false;
+    Serial.println("WiFi reconectado!");
+    Serial.print("IP ESP32: ");
+    Serial.println(WiFi.localIP());
   }
+}
+
+// ======================================================
+// OLED
+// ======================================================
+void updateOLED(float rawFlow, float smoothed, float lph, float avgFlow, float minFlow, float maxFlow, float total) {
+  display.clear();
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+
+  display.drawString(0, 0, "YF-S201 / ESP32");
+
+  if (rawFlow < 0.01f) {
+    display.drawString(0, 14, "Vazao: sem fluxo");
+  } else {
+    display.drawString(0, 14, "Vazao: " + String(rawFlow, 2) + " L/min");
+    display.drawString(0, 26, "Suave: " + String(smoothed, 2) + " L/min");
+  }
+
+  display.drawString(0, 38, "L/h:   " + String(lph, 2));
+  display.drawString(0, 48, "Tot: " + String(total, 3) + " L");
+
+  display.display();
 }
 
 // ======================================================
@@ -84,8 +211,7 @@ void sendToServer(float flow, float total) {
 // ======================================================
 void setup() {
   Serial.begin(115200);
-  
-  // 1. LIGAR O OLED PRIMEIRO DE TUDO
+
   VextON();
   displayReset();
   display.init();
@@ -95,108 +221,109 @@ void setup() {
   display.clear();
   display.drawString(0, 0, "Inicializando Heltec...");
   display.display();
-  delay(1000); // Pausa rápida para você ler a mensagem
+  delay(800);
 
-  // 2. CONFIGURAR O SENSOR YF-S201
+  // Sensor
   pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter, RISING);
 
-  // 3. CONECTAR AO WIFI (COM ANIMAÇÃO NO OLED)
-  Serial.println("Conectando WiFi...");
+  // WiFi
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false); // reduz latência e melhora estabilidade
   WiFi.begin(ssid, password);
 
-  int dots = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  display.clear();
+  display.drawString(0, 0, "Conectando WiFi...");
+  display.display();
 
+  Serial.print("Conectando WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(400);
+    Serial.print(".");
     display.clear();
     display.drawString(0, 0, "Conectando WiFi");
-
-    String loading = "";
-    for(int i = 0; i < dots; i++){
-      loading += ".";
-    }
-
-    display.drawString(0, 16, loading);
+    display.drawString(0, 14, String("Status: ") + WiFi.status());
     display.display();
-
-    dots++;
-    if(dots > 6) dots = 0;
   }
 
-  // 4. WIFI CONECTADO COM SUCESSO
-  Serial.println("");
+  Serial.println();
   Serial.println("WiFi conectado!");
   Serial.print("IP ESP32: ");
   Serial.println(WiFi.localIP());
 
+  // CoAP
+  coap.start(serverPort);
+
   display.clear();
   display.drawString(0, 0, "WiFi conectado!");
-  display.drawString(0, 16, "IP:");
-  display.drawString(0, 30, WiFi.localIP().toString());
+  display.drawString(0, 14, WiFi.localIP().toString());
+  display.drawString(0, 30, "CoAP ativo");
   display.display();
-  
-  delay(3000); // Mostra o IP por 3 segundos antes de iniciar a medição
+  delay(1500);
 
   lastMeasureTime = millis();
-  lastSendTime = millis(); // Inicializa o timer do servidor
+  lastSendTime = millis();
+  lastWifiCheck = millis();
 }
 
 // ======================================================
 // Loop
 // ======================================================
 void loop() {
+  ensureWiFi();
+  coap.loop();
+
   unsigned long now = millis();
 
-  if (now - lastMeasureTime >= 1000) {
-    lastMeasureTime += 1000;
+  // Amostragem mais fluida: 250 ms
+  if (now - lastMeasureTime >= 250) {
+    unsigned long elapsed = now - lastMeasureTime;
+    lastMeasureTime = now;
 
-    // Desabilita interrupções rapidamente para ler o pulso sem conflito
-    noInterrupts();
-    uint32_t pulses = pulseCount;
-    pulseCount = 0;
-    interrupts();
+    float pulses = readAndResetPulses();
 
-    // Cálculo de vazão padrão para o YF-S201
-    float flowLMin = pulses / 7.5f;
+    // Fórmula do YF-S201:
+    // aproximadamente 7.5 pulsos por segundo = 1 L/min
+    // aqui usamos o tempo real decorrido para ficar mais preciso
+    float flowLMin = 0.0f;
+    if (elapsed > 0) {
+      float pulsesPerSecond = (pulses * 1000.0f) / (float)elapsed;
+      flowLMin = pulsesPerSecond / 7.5f;
+    }
+
+    // Filtro exponencial para suavizar ruído
+    filteredFlow = (filteredFlow == 0.0f) ? flowLMin : (ALPHA * flowLMin + (1.0f - ALPHA) * filteredFlow);
+
     float flowLHour = flowLMin * 60.0f;
+    totalLiters += (flowLMin * ((float)elapsed / 1000.0f)) / 60.0f;
 
-    totalLiters += flowLMin / 60.0f;
+    pushFlowSample(filteredFlow);
 
-    // Log no Serial
+    float avgFlow = getFlowAverage();
+    float minFlow = getFlowMin();
+    float maxFlow = getFlowMax();
+
     Serial.print("Pulsos: ");
-    Serial.print(pulses);
-    Serial.print(" | Vazao: ");
+    Serial.print((unsigned long)pulses);
+    Serial.print(" | Vazao bruta: ");
     Serial.print(flowLMin, 2);
-    Serial.print(" L/min | ");
-    Serial.print(flowLHour, 2);
-    Serial.print(" L/h | Total: ");
+    Serial.print(" L/min | Filtrada: ");
+    Serial.print(filteredFlow, 2);
+    Serial.print(" L/min | Media: ");
+    Serial.print(avgFlow, 2);
+    Serial.print(" L/min | Total: ");
     Serial.print(totalLiters, 3);
     Serial.println(" L");
 
-    // Atualização do OLED
-    display.clear();
-    display.setTextAlignment(TEXT_ALIGN_LEFT);
-    display.drawString(0, 0, "YF-S201 / ESP32");
+    updateOLED(flowLMin, filteredFlow, flowLHour, avgFlow, minFlow, maxFlow, totalLiters);
 
-    if (flowLMin < 0.01f) {
-      display.drawString(0, 16, "Vazao: sem fluxo");
-    } else {
-      display.drawString(0, 16, "Vazao: " + String(flowLMin, 2) + " L/min");
-      display.drawString(0, 30, "L/h:   " + String(flowLHour, 2));
-    }
-
-    display.drawString(0, 46, "Total: " + String(totalLiters, 3) + " L");
-    display.display();
-
-    // ==================================================
-    // ENVIO PARA O BACKEND A CADA 5 SEGUNDOS
-    // ==================================================
-    // Ajustado de 100 para 5000 para refletir os 5 segundos reais.
-    if (now - lastSendTime > 500) { 
-      sendToServer(flowLMin, totalLiters);
+    // Envia a cada 5 segundos
+    if (now - lastSendTime >= 5000) {
+      sendToServer(flowLMin, filteredFlow, totalLiters, flowLHour, (uint32_t)pulses, avgFlow);
       lastSendTime = now;
     }
   }
+
+  // Pequena pausa para aliviar o loop sem travar a leitura
+  delay(2);
 }
