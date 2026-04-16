@@ -138,18 +138,18 @@ void sendToServer(float rawFlow, float smoothedFlow, float total, float lph, uin
            rawFlow, smoothedFlow, avgWindow, total, lph, (unsigned long)pulses);
 
   // Envio não-confirmável para ficar mais leve e fluido
-  coap.send(
-    serverIP,
-    serverPort,
-    coapResource,
-    COAP_NON,
-    COAP_PUT,
-    nullptr,
-    0,
-    (const uint8_t*)payload,
-    strlen(payload),
-    COAP_APPLICATION_JSON
-  );
+ coap.send(
+  serverIP,
+  serverPort,
+  coapResource,
+  COAP_NONCON,
+  COAP_PUT,
+  nullptr,
+  0,
+  (const uint8_t*)payload,
+  strlen(payload),
+  COAP_APPLICATION_JSON
+);
 
   Serial.print("CoAP enviado: ");
   Serial.println(payload);
