@@ -1,73 +1,106 @@
 import asyncio
-from aiocoap import resource, Context
-from flask import Flask, jsonify
-import threading
 import json
+import os
+import threading
+from datetime import datetime, timezone
 
-# =========================================
-# ARMAZENAMENTO DOS DADOS
-# =========================================
+from aiocoap import resource, Context, Message, CHANGED, CONTENT, BAD_REQUEST
+from flask import Flask, jsonify, send_from_directory
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(__name__)
+
+data_lock = threading.Lock()
 latest_data = {
-    "flow": 0,
-    "total": 0
+    "flow": 0.0,
+    "smooth": 0.0,
+    "avg": 0.0,
+    "total": 0.0,
+    "lph": 0.0,
+    "pulses": 0,
+    "received_at": None,
+    "source": "none"
 }
 
-# =========================================
-# SERVIDOR COAP
-# =========================================
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def parse_payload(payload_bytes: bytes):
+    text = payload_bytes.decode("utf-8", errors="strict").strip()
+    return json.loads(text)
+
+
 class VazaoResource(resource.Resource):
-
     async def render_put(self, request):
-        global latest_data
-
         try:
-            payload = request.payload.decode("utf-8")
-            data = json.loads(payload)
+            payload = parse_payload(request.payload)
 
-            latest_data = data
+            flow = float(payload.get("flow", 0.0))
+            smooth = float(payload.get("smooth", flow))
+            avg = float(payload.get("avg", smooth))
+            total = float(payload.get("total", 0.0))
+            lph = float(payload.get("lph", flow * 60.0))
+            pulses = int(payload.get("pulses", 0))
 
-            print("📡 CoAP recebido:", data)
+            with data_lock:
+                latest_data["flow"] = flow
+                latest_data["smooth"] = smooth
+                latest_data["avg"] = avg
+                latest_data["total"] = total
+                latest_data["lph"] = lph
+                latest_data["pulses"] = pulses
+                latest_data["received_at"] = now_iso()
+                latest_data["source"] = "coap"
 
-            return resource.Message(code=2.04)  # Changed
+            print(f"[COAP] flow={flow:.2f} smooth={smooth:.2f} avg={avg:.2f} total={total:.3f} lph={lph:.2f} pulses={pulses}")
+            return Message(code=CHANGED, payload=b'{"ok":true}')
 
         except Exception as e:
-            print("Erro:", e)
-            return resource.Message(code=4.00)
+            print("[COAP ERRO]", e)
+            return Message(code=BAD_REQUEST, payload=b'{"ok":false,"error":"invalid_payload"}')
+
+    async def render_get(self, request):
+        with data_lock:
+            body = json.dumps(latest_data, ensure_ascii=False).encode("utf-8")
+        return Message(code=CONTENT, payload=body)
 
 
-async def start_coap():
+async def run_coap_server():
     root = resource.Site()
-    root.add_resource(['vazao'], VazaoResource())
+    root.add_resource(["vazao"], VazaoResource())
 
-    await Context.create_server_context(root, bind=('0.0.0.0', 5683))
-
-    print("🚀 Servidor CoAP rodando na porta 5683")
+    await Context.create_server_context(root, bind=("0.0.0.0", 5683))
+    print("CoAP rodando em coap://0.0.0.0:5683/vazao")
     await asyncio.get_running_loop().create_future()
 
 
-# =========================================
-# SERVIDOR HTTP (FLASK)
-# =========================================
-app = Flask(__name__)
+def start_coap_thread():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_coap_server())
+
+
+@app.route("/")
+def home():
+    return send_from_directory(BASE_DIR, "index.html")
+
 
 @app.route("/vazao")
-def get_vazao():
-    return jsonify(latest_data)
+def vazao_http():
+    with data_lock:
+        return jsonify(latest_data)
 
 
-def start_http():
-    print("🌐 HTTP rodando em http://localhost:8000/vazao")
-    app.run(host="0.0.0.0", port=8000)
+@app.route("/health")
+def health():
+    return jsonify({"ok": True})
 
 
-# =========================================
-# MAIN
-# =========================================
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
+    threading.Thread(target=start_coap_thread, daemon=True).start()
 
-    # roda CoAP em thread separada
-    threading.Thread(target=lambda: loop.run_until_complete(start_coap()), daemon=True).start()
-
-    # roda HTTP
-    start_http()
+    print("HTTP rodando em http://0.0.0.0:8000/")
+    app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False, threaded=True)
