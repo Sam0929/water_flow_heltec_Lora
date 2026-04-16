@@ -10,7 +10,7 @@
 const char* ssid = "SamuelWifi";
 const char* password = "zvn1829d";
 
-String serverURL = "http://10.62.13.163:8000/vazao";
+String serverURL = "http://172.22.239.163:8000/vazao";
 
 // ======================================================
 // OLED Heltec
@@ -83,119 +83,88 @@ void sendToServer(float flow, float total) {
 // Setup
 // ======================================================
 void setup() {
-
   Serial.begin(115200);
-  delay(1000);
-
-  // WIFI
-  Serial.println("Conectando WiFi...");
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("");
-  Serial.println("WiFi conectado!");
-  Serial.print("IP ESP32: ");
-  Serial.println(WiFi.localIP());
-  delay(5000);
-
-  // Sensor
-  pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter, RISING);
-
-  // OLED
+  
+  // 1. LIGAR O OLED PRIMEIRO DE TUDO
   VextON();
   displayReset();
-
   display.init();
   display.flipScreenVertically();
   display.setFont(ArialMT_Plain_10);
 
   display.clear();
-  display.drawString(0, 0, "Inicializando...");
+  display.drawString(0, 0, "Inicializando Heltec...");
   display.display();
+  delay(1000); // Pausa rápida para você ler a mensagem
 
-  // ==============================
-// WIFI
-// ==============================
-display.clear();
-display.drawString(0, 0, "Conectando WiFi...");
-display.display();
+  // 2. CONFIGURAR O SENSOR YF-S201
+  pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter, RISING);
 
-Serial.println("Conectando WiFi...");
-WiFi.begin(ssid, password);
+  // 3. CONECTAR AO WIFI (COM ANIMAÇÃO NO OLED)
+  Serial.println("Conectando WiFi...");
+  WiFi.begin(ssid, password);
 
-// animação de pontos
-int dots = 0;
+  int dots = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
 
-while (WiFi.status() != WL_CONNECTED) {
+    display.clear();
+    display.drawString(0, 0, "Conectando WiFi");
 
-  delay(500);
-  Serial.print(".");
+    String loading = "";
+    for(int i = 0; i < dots; i++){
+      loading += ".";
+    }
 
-  display.clear();
-  display.drawString(0, 0, "Conectando WiFi");
+    display.drawString(0, 16, loading);
+    display.display();
 
-  String loading = "";
-  for(int i=0;i<dots;i++){
-    loading += ".";
+    dots++;
+    if(dots > 6) dots = 0;
   }
 
-  display.drawString(0, 16, loading);
+  // 4. WIFI CONECTADO COM SUCESSO
+  Serial.println("");
+  Serial.println("WiFi conectado!");
+  Serial.print("IP ESP32: ");
+  Serial.println(WiFi.localIP());
+
+  display.clear();
+  display.drawString(0, 0, "WiFi conectado!");
+  display.drawString(0, 16, "IP:");
+  display.drawString(0, 30, WiFi.localIP().toString());
   display.display();
-
-  dots++;
-  if(dots > 6) dots = 0;
-}
-
-// ==============================
-// WIFI conectado
-// ==============================
-
-Serial.println("");
-Serial.println("WiFi conectado!");
-Serial.print("IP ESP32: ");
-Serial.println(WiFi.localIP());
-
-display.clear();
-display.drawString(0, 0, "WiFi conectado!");
-
-display.drawString(0, 16, "IP:");
-
-display.drawString(0, 30, WiFi.localIP().toString());
-
-display.display();
-
-delay(5000);
+  
+  delay(3000); // Mostra o IP por 3 segundos antes de iniciar a medição
 
   lastMeasureTime = millis();
+  lastSendTime = millis(); // Inicializa o timer do servidor
 }
 
 // ======================================================
 // Loop
 // ======================================================
 void loop() {
-
   unsigned long now = millis();
 
   if (now - lastMeasureTime >= 1000) {
-
     lastMeasureTime += 1000;
 
+    // Desabilita interrupções rapidamente para ler o pulso sem conflito
     noInterrupts();
     uint32_t pulses = pulseCount;
     pulseCount = 0;
     interrupts();
 
+    // Cálculo de vazão padrão para o YF-S201
     float flowLMin = pulses / 7.5f;
     float flowLHour = flowLMin * 60.0f;
 
     totalLiters += flowLMin / 60.0f;
 
-    // Serial
+    // Log no Serial
     Serial.print("Pulsos: ");
     Serial.print(pulses);
     Serial.print(" | Vazao: ");
@@ -206,10 +175,9 @@ void loop() {
     Serial.print(totalLiters, 3);
     Serial.println(" L");
 
-    // OLED
+    // Atualização do OLED
     display.clear();
     display.setTextAlignment(TEXT_ALIGN_LEFT);
-
     display.drawString(0, 0, "YF-S201 / ESP32");
 
     if (flowLMin < 0.01f) {
@@ -220,14 +188,13 @@ void loop() {
     }
 
     display.drawString(0, 46, "Total: " + String(totalLiters, 3) + " L");
-
     display.display();
 
     // ==================================================
-    // ENVIO PARA SERVIDOR A CADA 5 SEGUNDOS
+    // ENVIO PARA O BACKEND A CADA 5 SEGUNDOS
     // ==================================================
-    if (now - lastSendTime > 100) {
-
+    // Ajustado de 100 para 5000 para refletir os 5 segundos reais.
+    if (now - lastSendTime > 500) { 
       sendToServer(flowLMin, totalLiters);
       lastSendTime = now;
     }
