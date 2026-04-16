@@ -1,0 +1,73 @@
+import asyncio
+from aiocoap import resource, Context
+from flask import Flask, jsonify
+import threading
+import json
+
+# =========================================
+# ARMAZENAMENTO DOS DADOS
+# =========================================
+latest_data = {
+    "flow": 0,
+    "total": 0
+}
+
+# =========================================
+# SERVIDOR COAP
+# =========================================
+class VazaoResource(resource.Resource):
+
+    async def render_put(self, request):
+        global latest_data
+
+        try:
+            payload = request.payload.decode("utf-8")
+            data = json.loads(payload)
+
+            latest_data = data
+
+            print("📡 CoAP recebido:", data)
+
+            return resource.Message(code=2.04)  # Changed
+
+        except Exception as e:
+            print("Erro:", e)
+            return resource.Message(code=4.00)
+
+
+async def start_coap():
+    root = resource.Site()
+    root.add_resource(['vazao'], VazaoResource())
+
+    await Context.create_server_context(root, bind=('0.0.0.0', 5683))
+
+    print("🚀 Servidor CoAP rodando na porta 5683")
+    await asyncio.get_running_loop().create_future()
+
+
+# =========================================
+# SERVIDOR HTTP (FLASK)
+# =========================================
+app = Flask(__name__)
+
+@app.route("/vazao")
+def get_vazao():
+    return jsonify(latest_data)
+
+
+def start_http():
+    print("🌐 HTTP rodando em http://localhost:8000/vazao")
+    app.run(host="0.0.0.0", port=8000)
+
+
+# =========================================
+# MAIN
+# =========================================
+if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+
+    # roda CoAP em thread separada
+    threading.Thread(target=lambda: loop.run_until_complete(start_coap()), daemon=True).start()
+
+    # roda HTTP
+    start_http()
