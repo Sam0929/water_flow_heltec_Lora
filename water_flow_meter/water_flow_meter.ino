@@ -4,16 +4,13 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <coap-simple.h>
+#include "arduino_secrets.h"
 
-// ======================================================
-// WIFI e ThingsBoard Config
-// ======================================================
-const char* ssid = "SamuelWifi";
-const char* password = "zvn1829d";
-
-// Domínio do ThingsBoard (pode ser o demo ou a sua instância própria)
-const char* tb_host = "demo.thingsboard.io"; 
-const char* TOKEN = "GWCiZFYxsqPZxNfnWmGQ"; 
+// Atribui as definições do arquivo de segredos às constantes
+const char* ssid = SECRET_SSID;
+const char* password = SECRET_PASS;
+const char* TOKEN = SECRET_TOKEN;
+const char* tb_host = SECRET_TB_HOST;
 
 IPAddress serverIP; // Será resolvido no setup via DNS
 const int coapPort = 5683;
@@ -87,7 +84,7 @@ void sendToServer(float flow, float total) {
       (uint8_t *)payload.c_str(), 
       payload.length(),
       COAP_APPLICATION_JSON
-    );
+    ); 
     
     if(msgid > 0) {
       Serial.println("Pacote despachado na rede!");
@@ -176,7 +173,7 @@ void loop() {
     display.display();
 
     // Envia os dados via CoAP a cada 5 segundos
-    if (now - lastSendTime > 100) {
+    if (now - lastSendTime > 5000) {
       sendToServer(flowLMin, totalLiters);
       lastSendTime = now;
     }
