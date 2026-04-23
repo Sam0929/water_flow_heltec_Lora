@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard Inteligente de Vazão de Água</title>
+  <style>
+    :root{
+      --bg1:#06121f;
+      --bg2:#0b1e33;
+      --card: rgba(255,255,255,.08);
+      --card-border: rgba(255,255,255,.12);
+      --text:#eaf4ff;
+      --muted:#9fb3c8;
+      --accent:#4cc9f0;
+      --accent2:#7c6cff;
+      --good:#2ee59d;
+      --warn:#ffb703;
+      --bad:#ff5d73;
+      --shadow: 0 20px 50px rgba(0,0,0,.35);
+    }
+
+    *{ box-sizing:border-box; }
+    html,body{
+      margin:0;
+      padding:0;
+      min-height:100%;
+      background:
+        radial-gradient(circle at top left, rgba(76,201,240,.18), transparent 35%),
+        radial-gradient(circle at top right, rgba(124,108,255,.16), transparent 30%),
+        linear-gradient(135deg, var(--bg1), var(--bg2));
+      color:var(--text);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    body{
+      padding:24px;
+    }
+
+    .wrap{
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+
+    .hero{
+      display:flex;
+      flex-wrap:wrap;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:20px;
+    }
+
+    .title-block h1{
+      margin:0;
+      font-size: clamp(28px, 3vw, 44px);
+      letter-spacing:-.03em;
+      line-height:1.05;
+    }
+
+    .title-block p{
+      margin:10px 0 0;
+      color:var(--muted);
+      max-width: 900px;
+      font-size: 15px;
+    }
+
+    .live-chip{
+      display:inline-flex;
+      align-items:center;
+      gap:10px;
+      padding:10px 14px;
+      border-radius:999px;
+      background: rgba(255,255,255,.08);
+      border:1px solid var(--card-border);
+      box-shadow: var(--shadow);
+      color:#dff6ff;
+      white-space:nowrap;
+      font-size:14px;
+    }
+
+    .pulse{
+      width:10px;
+      height:10px;
+      border-radius:50%;
+      background: var(--good);
+      box-shadow:0 0 0 rgba(46,229,157,.45);
+      animation:pulse 1.5s infinite;
+    }
+
+    @keyframes pulse{
+      0%{ box-shadow:0 0 0 0 rgba(46,229,157,.55); }
+      70%{ box-shadow:0 0 0 12px rgba(46,229,157,0); }
+      100%{ box-shadow:0 0 0 0 rgba(46,229,157,0); }
+    }
+
+    .grid-cards{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:16px;
+      margin-bottom:16px;
+    }
+
+    .card{
+      background: var(--card);
+      border:1px solid var(--card-border);
+      border-radius:22px;
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow);
+    }
+
+    .metric{
+      padding:18px 18px 16px;
+      min-height: 136px;
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+    }
+
+    .metric small{
+      color:var(--muted);
+      display:block;
+      margin-bottom:8px;
+      letter-spacing:.03em;
+      text-transform:uppercase;
+      font-size:11px;
+    }
+
+    .metric .value{
+      font-size: 30px;
+      font-weight: 800;
+      line-height:1;
+      letter-spacing:-.04em;
+    }
+
+    .metric .sub{
+      margin-top:10px;
+      color:#d9e7f4;
+      font-size:13px;
+      line-height:1.45;
+    }
+
+    .accent{
+      color: var(--accent);
+    }
+    .accent2{
+      color: #c7b8ff;
+    }
+    .good{ color: var(--good); }
+    .warn{ color: var(--warn); }
+    .bad{ color: var(--bad); }
+
+    .span-3{ grid-column: span 3; }
+    .span-4{ grid-column: span 4; }
+    .span-5{ grid-column: span 5; }
+    .span-6{ grid-column: span 6; }
+    .span-7{ grid-column: span 7; }
+    .span-8{ grid-column: span 8; }
+    .span-12{ grid-column: span 12; }
+
+    .layout{
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap:16px;
+      margin-bottom:16px;
+    }
+
+    .panel{
+      padding:18px;
+    }
+
+    .panel-header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:14px;
+    }
+
+    .panel-header h2{
+      margin:0;
+      font-size:18px;
+      letter-spacing:-.02em;
+    }
+
+    .panel-header p{
+      margin:4px 0 0;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .btn{
+      appearance:none;
+      border:none;
+      border-radius:14px;
+      padding:12px 14px;
+      cursor:pointer;
+      color:#fff;
+      font-weight:700;
+      background: linear-gradient(135deg, rgba(76,201,240,.95), rgba(124,108,255,.95));
+      box-shadow: 0 12px 28px rgba(76,201,240,.18);
+      transition: transform .15s ease, filter .15s ease;
+    }
+
+    .btn:hover{ transform: translateY(-1px); filter:saturate(1.05); }
+    .btn:active{ transform: translateY(0); }
+
+    .gauge-wrap{
+      display:grid;
+      grid-template-columns: 260px 1fr;
+      gap:18px;
+      align-items:center;
+    }
+
+    .gauge-box{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      position:relative;
+      min-height:260px;
+    }
+
+    canvas{
+      width:100%;
+      display:block;
+    }
+
+    .gauge-center{
+      position:absolute;
+      text-align:center;
+      transform: translateY(-6px);
+    }
+
+    .gauge-center .big{
+      font-size:42px;
+      font-weight:900;
+      line-height:1;
+      letter-spacing:-.05em;
+    }
+
+    .gauge-center .label{
+      margin-top:8px;
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .analysis-box{
+      display:grid;
+      gap:12px;
+    }
+
+    .analysis-row{
+      background: rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:16px;
+      padding:12px 14px;
+    }
+
+    .analysis-row .top{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-bottom:8px;
+      font-size:13px;
+      color:#dce9f7;
+    }
+
+    .bar{
+      height:10px;
+      border-radius:999px;
+      background: rgba(255,255,255,.09);
+      overflow:hidden;
+    }
+
+    .bar > span{
+      display:block;
+      height:100%;
+      border-radius:999px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      width:0%;
+      transition: width .4s ease;
+    }
+
+    .bar.good > span{ background: linear-gradient(90deg, var(--good), #72f2c0); }
+    .bar.warn > span{ background: linear-gradient(90deg, var(--warn), #ffd56a); }
+    .bar.bad > span{ background: linear-gradient(90deg, var(--bad), #ff8a9a); }
+
+    .charts{
+      display:grid;
+      grid-template-columns: 1.4fr .9fr;
+      gap:16px;
+      margin-bottom:16px;
+    }
+
+    .chart-box{
+      padding:18px;
+    }
+
+    .chart-frame{
+      position:relative;
+      height:360px;
+      border-radius:18px;
+      overflow:hidden;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
+      border:1px solid rgba(255,255,255,.08);
+    }
+
+    .chart-frame.sm{
+      height:360px;
+    }
+
+    .chart-meta{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:12px;
+    }
+
+    .pill{
+      padding:8px 10px;
+      border-radius:999px;
+      font-size:12px;
+      color:#d7e8f8;
+      background: rgba(255,255,255,.07);
+      border:1px solid rgba(255,255,255,.08);
+    }
+
+    .report{
+      padding:18px;
+    }
+
+    .report-grid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:16px;
+    }
+
+    .text-card{
+      padding:18px;
+      min-height: 220px;
+    }
+
+    .span-7 .text-card{
+      height:100%;
+    }
+
+    .report-text{
+      color:#eaf4ff;
+      line-height:1.7;
+      font-size:14px;
+    }
+
+    .report-text strong{
+      color:#fff;
+    }
+
+    .event-list{
+      display:grid;
+      gap:10px;
+      max-height: 340px;
+      overflow:auto;
+      padding-right:2px;
+    }
+
+    .event{
+      padding:12px 13px;
+      border-radius:14px;
+      background: rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.08);
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-size:13px;
+      color:#d8e7f6;
+    }
+
+    .event .time{
+      color:var(--muted);
+      white-space:nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .footer-note{
+      margin-top:16px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.5;
+    }
+
+    .status-line{
+      margin-top:8px;
+      font-size:13px;
+      color:#dce9f7;
+    }
+
+    .error{
+      color: #ffb1bc;
+    }
+
+    @media (max-width: 1180px){
+      .layout, .charts{
+        grid-template-columns: 1fr;
+      }
+      .gauge-wrap{
+        grid-template-columns: 1fr;
+      }
+      .span-3, .span-4, .span-5, .span-6, .span-7, .span-8{
+        grid-column: span 12;
+      }
+    }
+
+    @media (max-width: 700px){
+      body{ padding:14px; }
+      .metric .value{ font-size:26px; }
+      .chart-frame, .chart-frame.sm{ height:300px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="title-block">
+        <h1>Dashboard Inteligente de Vazão de Água</h1>
+        <p>
+          Monitoramento em tempo real com histórico, diagnóstico automático, comportamento de consumo,
+          análise de estabilidade e alertas visuais para um sensor YF-S201.
+        </p>
+      </div>
+      <div class="live-chip">
+        <span class="pulse"></span>
+        <span id="connectionLabel">Conectando ao servidor...</span>
+      </div>
+    </div>
+
+    <div class="grid-cards">
+      <div class="card metric span-3">
+        <div>
+          <small>Vazão atual</small>
+          <div class="value accent" id="flowValue">--</div>
+        </div>
+        <div class="sub">Leitura instantânea do sensor em L/min.</div>
+      </div>
+
+      <div class="card metric span-3">
+        <div>
+          <small>Total acumulado</small>
+          <div class="value accent2" id="totalValue">--</div>
+        </div>
+        <div class="sub">Volume total registrado desde o início da medição.</div>
+      </div>
+
+      <div class="card metric span-3">
+        <div>
+          <small>Média móvel 1 min</small>
+          <div class="value" id="avgValue">--</div>
+        </div>
+        <div class="sub">Suaviza ruído e mostra a tendência mais estável.</div>
+      </div>
+
+      <div class="card metric span-3">
+        <div>
+          <small>Pico recente</small>
+          <div class="value" id="peakValue">--</div>
+        </div>
+        <div class="sub">Maior vazão observada na janela recente.</div>
+      </div>
+
+      <div class="card metric span-3">
+        <div>
+          <small>Tendência</small>
+          <div class="value" id="trendValue">--</div>
+        </div>
+        <div class="sub">Comportamento calculado por regressão linear.</div>
+      </div>
+
+      <div class="card metric span-3">
+        <div>
+          <small>Projeção 24h</small>
+          <div class="value" id="dailyValue">--</div>
+        </div>
+        <div class="sub">Estimativa baseada na média móvel do período analisado.</div>
+      </div>
+
+      <div class="card metric span-3">
+        <div>
+          <small>Estabilidade</small>
+          <div class="value" id="stabilityValue">--</div>
+        </div>
+        <div class="sub">Quanto mais alto, mais uniforme é o fluxo.</div>
+      </div>
+
+      <div class="card metric span-3">
+        <div>
+          <small>Última atualização</small>
+          <div class="value" id="updatedValue">--</div>
+        </div>
+        <div class="sub">Sincronização do painel com o backend.</div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="card panel">
+        <div class="panel-header">
+          <div>
+            <h2>Visão operacional</h2>
+            <p>Leitura atual com indicador, diagnóstico e barras de qualidade.</p>
+          </div>
+          <button class="btn" onclick="resetHistory()">Limpar histórico local</button>
+        </div>
+
+        <div class="gauge-wrap">
+          <div class="gauge-box">
+            <canvas id="gaugeCanvas" width="260" height="260"></canvas>
+            <div class="gauge-center">
+              <div class="big" id="gaugeText">--</div>
+              <div class="label">L/min agora</div>
+            </div>
+          </div>
+
+          <div class="analysis-box">
+            <div class="analysis-row">
+              <div class="top">
+                <span>Variação em relação ao último ponto</span>
+                <strong id="deltaValue">--</strong>
+              </div>
+              <div class="bar good"><span id="deltaBar"></span></div>
+            </div>
+
+            <div class="analysis-row">
+              <div class="top">
+                <span>Qualidade da estabilidade</span>
+                <strong id="qualityValue">--</strong>
+              </div>
+              <div class="bar"><span id="qualityBar"></span></div>
+            </div>
+
+            <div class="analysis-row">
+              <div class="top">
+                <span>Consumo na última hora</span>
+                <strong id="lastHourValue">--</strong>
+              </div>
+              <div class="bar warn"><span id="lastHourBar"></span></div>
+            </div>
+
+            <div class="analysis-row">
+              <div class="top">
+                <span>Alertas automáticos</span>
+                <strong id="alertValue">Sem alertas</strong>
+              </div>
+              <div class="bar bad"><span id="alertBar"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="status-line" id="statusLine">Aguardando dados do sensor...</div>
+      </div>
+
+      <div class="card panel">
+        <div class="panel-header">
+          <div>
+            <h2>Diagnóstico automático</h2>
+            <p>Resumo inteligente do estado atual do sistema.</p>
+          </div>
+        </div>
+
+        <div class="event-list" id="eventList"></div>
+      </div>
+    </div>
+
+    <div class="charts">
+      <div class="card chart-box">
+        <div class="panel-header">
+          <div>
+            <h2>Evolução da vazão</h2>
+            <p>Últimos pontos coletados em tempo real.</p>
+          </div>
+          <div class="pill" id="historyLabel">Janela: 10 min</div>
+        </div>
+        <div class="chart-frame">
+          <canvas id="flowChart" width="1200" height="360"></canvas>
+        </div>
+        <div class="chart-meta">
+          <span class="pill" id="metricWindow">Média móvel: --</span>
+          <span class="pill" id="metricMin">Mínimo: --</span>
+          <span class="pill" id="metricMax">Máximo: --</span>
+          <span class="pill" id="metricStd">Desvio padrão: --</span>
+        </div>
+      </div>
+
+      <div class="card chart-box">
+        <div class="panel-header">
+          <div>
+            <h2>Volume acumulado por tempo</h2>
+            <p>Leitura do total e estimativa de comportamento do consumo.</p>
+          </div>
+          <div class="pill">Atualização: 1s</div>
+        </div>
+        <div class="chart-frame sm">
+          <canvas id="totalChart" width="900" height="360"></canvas>
+        </div>
+        <div class="chart-meta">
+          <span class="pill" id="metric1h">1h: --</span>
+          <span class="pill" id="metricPeakTime">Pico recente: --</span>
+          <span class="pill" id="metricTrendSlope">Inclinação: --</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card report">
+      <div class="panel-header">
+        <div>
+          <h2>Relatório executivo automático</h2>
+          <p>Interpretação textual gerada a partir dos dados coletados.</p>
+        </div>
+      </div>
+
+      <div class="report-grid">
+        <div class="card text-card span-7">
+          <div class="report-text" id="reportText">
+            Ainda não há dados suficientes para análise. Assim que o sensor começar a enviar leituras,
+            este painel vai calcular vazão média, picos, estabilidade, projeção diária, variação recente
+            e possíveis alertas de consumo anormal.
+          </div>
+        </div>
+
+        <div class="card text-card span-5">
+          <div class="panel-header" style="margin-bottom:10px;">
+            <div>
+              <h2>Últimos eventos</h2>
+              <p>Histórico resumido de mudanças relevantes.</p>
+            </div>
+          </div>
+          <div class="event-list" id="historyEvents"></div>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        O painel assume que o backend responde em <strong>/vazao</strong> com JSON no formato:
+        <strong>{ "flow": número, "total": número }</strong>. Toda a análise avançada é feita no navegador,
+        sem depender de biblioteca externa.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = "/api/vazao";
+    const SAMPLE_INTERVAL_MS = 1000;
+    const HISTORY_LIMIT = 600; // 10 minutos de amostragem por segundo
+    const FLOW_THRESHOLD = 0.01;
+
+    const history = [];
+    let lastOkFetch = null;
+    let lastFlow = null;
+    let lastTotal = null;
+    let lastAlertText = "Sem alertas";
+    let sustainedLowFlowStart = null;
+
+    const el = (id) => document.getElementById(id);
+
+    function fmt(n, d = 2){
+      if (n === null || n === undefined || Number.isNaN(Number(n))) return "--";
+      return Number(n).toFixed(d);
+    }
+
+    function fmtSmart(n, d = 2){
+      if (!isFinite(n)) return "--";
+      return Number(n).toFixed(d);
+    }
+
+    function fmtTime(date){
+      return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
+
+    function clamp(v, min, max){
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function mean(arr){
+      if (!arr.length) return 0;
+      return arr.reduce((a,b)=>a+b,0) / arr.length;
+    }
+
+    function stdDev(arr){
+      if (arr.length < 2) return 0;
+      const m = mean(arr);
+      const v = mean(arr.map(x => (x - m) ** 2));
+      return Math.sqrt(v);
+    }
+
+    function linearRegression(points){
+      if (points.length < 2) return { slope: 0, intercept: 0 };
+      const n = points.length;
+      const xs = points.map(p => p.t);
+      const ys = points.map(p => p.y);
+      const xMean = mean(xs);
+      const yMean = mean(ys);
+      let num = 0, den = 0;
+      for (let i = 0; i < n; i++){
+        const dx = xs[i] - xMean;
+        num += dx * (ys[i] - yMean);
+        den += dx * dx;
+      }
+      const slope = den === 0 ? 0 : num / den;
+      const intercept = yMean - slope * xMean;
+      return { slope, intercept };
+    }
+
+    function pushHistory(flow, total, ts = Date.now()){
+      history.push({ t: ts, flow, total });
+      while (history.length > HISTORY_LIMIT) history.shift();
+    }
+
+    function lastWindow(ms){
+      const cutoff = Date.now() - ms;
+      return history.filter(p => p.t >= cutoff);
+    }
+
+    function getStats(windowPoints){
+      const flows = windowPoints.map(p => p.flow);
+      const totals = windowPoints.map(p => p.total);
+
+      const avg = mean(flows);
+      const min = flows.length ? Math.min(...flows) : 0;
+      const max = flows.length ? Math.max(...flows) : 0;
+      const sd = stdDev(flows);
+      const cv = avg > 0 ? sd / avg : 0;
+      const stability = clamp(100 - cv * 120, 0, 100);
+
+      const reg = linearRegression(windowPoints.map((p, idx) => ({ t: idx, y: p.flow })));
+      const slope = reg.slope;
+
+      const trend =
+        slope > 0.015 ? "Em alta" :
+        slope < -0.015 ? "Em queda" :
+        "Estável";
+
+      const current = history.length ? history[history.length - 1].flow : 0;
+      const previous = history.length > 1 ? history[history.length - 2].flow : current;
+      const delta = current - previous;
+      const deltaPct = previous > 0 ? (delta / previous) * 100 : 0;
+
+      const last5m = lastWindow(5 * 60 * 1000);
+      const last1h = lastWindow(60 * 60 * 1000);
+      const last1m = lastWindow(60 * 1000);
+
+      const volume5m = last5m.length >= 2 ? (last5m[last5m.length - 1].total - last5m[0].total) : 0;
+      const volume1h = last1h.length >= 2 ? (last1h[last1h.length - 1].total - last1h[0].total) : 0;
+
+      const avg1m = mean(last1m.map(p => p.flow));
+      const peakIndex = flows.length ? flows.indexOf(max) : -1;
+      const peakTime = peakIndex >= 0 ? windowPoints[peakIndex].t : null;
+
+      let dailyProjection = avg1m * 60 * 24;
+      if (!isFinite(dailyProjection) || dailyProjection < 0) dailyProjection = 0;
+
+      return {
+        avg, min, max, sd, stability, trend, slope,
+        current, previous, delta, deltaPct,
+        volume5m, volume1h, avg1m, peakTime, dailyProjection,
+        currentTotal: totals.length ? totals[totals.length - 1] : 0
+      };
+    }
+
+    function classifyStatus(stats){
+      if (history.length < 3) return "Aguardando mais dados para análise confiável.";
+
+      if (stats.current < FLOW_THRESHOLD && stats.avg1m < FLOW_THRESHOLD){
+        return "Fluxo praticamente nulo. O sistema está em repouso ou com consumo zerado.";
+      }
+
+      if (stats.stability >= 85 && stats.avg1m >= FLOW_THRESHOLD){
+        return "Fluxo muito estável. Indica uso regular e variações pequenas.";
+      }
+
+      if (stats.trend === "Em alta" && stats.current > stats.avg1m * 1.25){
+        return "Há aumento de vazão acima do padrão recente. Possível pico de consumo ou abertura súbita.";
+      }
+
+      if (stats.trend === "Em queda" && stats.current < stats.avg1m * 0.75){
+        return "A vazão está reduzindo. O consumo pode estar encerrando ou se aproximando do repouso.";
+      }
+
+      if (stats.sd > 0.5 && stats.avg1m > FLOW_THRESHOLD){
+        return "O fluxo está oscilando bastante. Verifique uso intermitente, válvula ou comportamento irregular.";
+      }
+
+      return "Sistema operando dentro de um padrão intermediário, sem anomalia evidente no momento.";
+    }
+
+    function buildAlerts(stats){
+      const alerts = [];
+
+      if (history.length >= 10){
+        const last10 = history.slice(-10);
+        const allLow = last10.every(p => p.flow < FLOW_THRESHOLD);
+        if (allLow){
+          alerts.push("Sem fluxo significativo nos últimos 10 segundos.");
+        }
+      }
+
+      if (stats.current > Math.max(1.5 * stats.avg1m, stats.avg1m + 0.5) && stats.current > 0.2){
+        alerts.push("Pico abrupto detectado acima da média recente.");
+      }
+
+      if (stats.stability < 55 && stats.avg1m > FLOW_THRESHOLD){
+        alerts.push("Baixa estabilidade: consumo irregular ou pulsos instáveis.");
+      }
+
+      if (stats.volume1h > 0 && stats.avg1m > 0){
+        const estimatedLeak = stats.current > 0.02 && stats.current < 0.5 && stats.stability < 70;
+        if (estimatedLeak){
+          alerts.push("Indício de fluxo contínuo baixo. Vale inspecionar possível vazamento.");
+        }
+      }
+
+      if (alerts.length === 0){
+        alerts.push("Nenhum alerta crítico no momento.");
+      }
+
+      return alerts;
+    }
+
+    function updateEvents(stats){
+      const list = el("eventList");
+      const historyList = el("historyEvents");
+
+      const items = [];
+
+      items.push({
+        text: `Média móvel de ${fmt(stats.avg1m, 2)} L/min`,
+        time: "janela 1 min"
+      });
+
+      items.push({
+        text: `Estabilidade calculada em ${fmt(stats.stability, 1)}%`,
+        time: "indicador"
+      });
+
+      items.push({
+        text: `Volume na última hora: ${fmt(stats.volume1h, 3)} L`,
+        time: "janela 1h"
+      });
+
+      items.push({
+        text: `Projeção diária: ${fmt(stats.dailyProjection, 1)} L`,
+        time: "estimativa"
+      });
+
+      const alerts = buildAlerts(stats);
+      for (const a of alerts){
+        items.push({
+          text: a,
+          time: "alerta"
+        });
+      }
+
+      list.innerHTML = items.map(item => `
+        <div class="event">
+          <div>${item.text}</div>
+          <div class="time">${item.time}</div>
+        </div>
+      `).join("");
+
+      const recent = history.slice(-8).reverse().map(p => `
+        <div class="event">
+          <div>${fmt(p.flow, 2)} L/min — Total ${fmt(p.total, 3)} L</div>
+          <div class="time">${fmtTime(new Date(p.t))}</div>
+        </div>
+      `).join("");
+
+      historyList.innerHTML = recent || `
+        <div class="event">
+          <div>Aguardando primeiras leituras...</div>
+          <div class="time">—</div>
+        </div>
+      `;
+    }
+
+    function updateBars(stats){
+      const deltaPct = Math.abs(stats.deltaPct);
+      el("deltaBar").style.width = `${clamp(deltaPct, 0, 100)}%`;
+      el("qualityBar").style.width = `${clamp(stats.stability, 0, 100)}%`;
+      el("lastHourBar").style.width = `${clamp(stats.volume1h > 0 ? (stats.volume1h / Math.max(stats.dailyProjection / 24, 0.001)) * 100 : 0, 0, 100)}%`;
+      el("alertBar").style.width = `${clamp(stats.stability < 55 || stats.avg1m < FLOW_THRESHOLD ? 85 : 18, 0, 100)}%`;
+
+      el("qualityValue").textContent = `${fmt(stats.stability, 0)}%`;
+      el("deltaValue").textContent = `${stats.delta >= 0 ? "+" : ""}${fmt(stats.delta, 2)} L/min (${stats.deltaPct >= 0 ? "+" : ""}${fmt(stats.deltaPct, 1)}%)`;
+      el("lastHourValue").textContent = `${fmt(stats.volume1h, 3)} L`;
+      el("alertValue").textContent = buildAlerts(stats)[0];
+      el("alertValue").className = "";
+      if (buildAlerts(stats)[0] !== "Nenhum alerta crítico no momento.") {
+        el("alertValue").classList.add("warn");
+      }
+    }
+
+    function updateSummary(stats){
+      el("flowValue").textContent = `${fmt(stats.current, 2)} L/min`;
+      el("totalValue").textContent = `${fmt(stats.currentTotal, 3)} L`;
+      el("avgValue").textContent = `${fmt(stats.avg1m, 2)} L/min`;
+      el("peakValue").textContent = `${fmt(stats.max, 2)} L/min`;
+      el("trendValue").textContent = stats.trend;
+      el("dailyValue").textContent = `${fmt(stats.dailyProjection, 1)} L/dia`;
+      el("stabilityValue").textContent = `${fmt(stats.stability, 0)}%`;
+      el("updatedValue").textContent = lastOkFetch ? fmtTime(lastOkFetch) : "--";
+
+      el("metricWindow").textContent = `Média móvel: ${fmt(stats.avg1m, 2)} L/min`;
+      el("metricMin").textContent = `Mínimo: ${fmt(stats.min, 2)} L/min`;
+      el("metricMax").textContent = `Máximo: ${fmt(stats.max, 2)} L/min`;
+      el("metricStd").textContent = `Desvio padrão: ${fmt(stats.sd, 3)}`;
+      el("metric1h").textContent = `1h: ${fmt(stats.volume1h, 3)} L`;
+      el("metricPeakTime").textContent = `Pico recente: ${stats.peakTime ? fmtTime(new Date(stats.peakTime)) : "--"}`;
+      el("metricTrendSlope").textContent = `Inclinação: ${fmt(stats.slope, 4)} L/min por amostra`;
+
+      el("gaugeText").textContent = fmt(stats.current, 2);
+
+      const alerts = buildAlerts(stats);
+      el("alertValue").textContent = alerts[0];
+      el("statusLine").textContent = classifyStatus(stats);
+
+      const report = generateReport(stats, alerts);
+      el("reportText").innerHTML = report;
+      el("connectionLabel").textContent = "Dados recebidos em tempo real";
+      el("connectionLabel").classList.remove("error");
+    }
+
+    function generateReport(stats, alerts){
+      const tendencia =
+        stats.trend === "Em alta" ? "crescimento" :
+        stats.trend === "Em queda" ? "redução" : "estabilidade";
+
+      const consumo =
+        stats.current > FLOW_THRESHOLD
+          ? `O fluxo atual está em <strong>${fmt(stats.current, 2)} L/min</strong>, indicando consumo ativo.`
+          : `A vazão está praticamente zerada, sugerindo ausência de consumo no instante analisado.`;
+
+      const proj = stats.dailyProjection > 0
+        ? `Com base na média móvel, a projeção diária é de <strong>${fmt(stats.dailyProjection, 1)} L/dia</strong>.`
+        : `Ainda não há base suficiente para projeção diária confiável.`;
+
+      const estabilidadeTexto =
+        stats.stability >= 85 ? "excelente" :
+        stats.stability >= 65 ? "boa" :
+        stats.stability >= 45 ? "moderada" : "baixa";
+
+      const alertText = alerts.length > 0
+        ? `Alertas atuais: <strong>${alerts.join(" | ")}</strong>.`
+        : "Nenhum alerta significativo foi identificado.";
+
+      return `
+        O relatório indica um cenário de <strong>${tendencia}</strong> no comportamento de vazão.
+        ${consumo}
+        A média móvel de 1 minuto está em <strong>${fmt(stats.avg1m, 2)} L/min</strong>,
+        com pico recente de <strong>${fmt(stats.max, 2)} L/min</strong> e estabilidade <strong>${estabilidadeTexto}</strong>
+        (${fmt(stats.stability, 0)}%).
+        ${proj}
+        Nas últimas horas analisadas, o volume acumulado foi de <strong>${fmt(stats.volume1h, 3)} L</strong>,
+        o que ajuda a identificar padrões de uso e consumo prolongado.
+        <br><br>
+        <strong>Interpretação técnica:</strong> o desvio padrão de ${fmt(stats.sd, 3)} mostra o nível de oscilação do fluxo.
+        Quanto menor esse valor, mais uniforme é o padrão do sensor. A inclinação atual é
+        <strong>${fmt(stats.slope, 4)} L/min por amostra</strong>, útil para identificar aceleração ou desaceleração do consumo.
+        <br><br>
+        <strong>Diagnóstico heurístico:</strong> ${classifyStatus(stats)}
+        <br><br>
+        ${alertText}
+      `;
+    }
+
+    function drawGauge(value){
+      const canvas = el("gaugeCanvas");
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+      ctx.clearRect(0,0,w,h);
+
+      const cx = w/2, cy = h/2, r = 96;
+      const start = Math.PI * 0.75;
+      const end = Math.PI * 2.25;
+      const maxScale = Math.max(2, ...history.slice(-60).map(p => p.flow), 1.5);
+      const pct = clamp(value / maxScale, 0, 1);
+
+      // background
+      ctx.lineCap = "round";
+      ctx.lineWidth = 18;
+      ctx.strokeStyle = "rgba(255,255,255,.08)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, start, end);
+      ctx.stroke();
+
+      // gradiente
+      const grad = ctx.createLinearGradient(0, 0, w, 0);
+      grad.addColorStop(0, "#4cc9f0");
+      grad.addColorStop(0.5, "#7c6cff");
+      grad.addColorStop(1, "#2ee59d");
+
+      // value arc
+      ctx.strokeStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, start, start + (end - start) * pct);
+      ctx.stroke();
+
+      // ticks
+      ctx.lineWidth = 2;
+      for (let i = 0; i <= 10; i++){
+        const a = start + (end - start) * (i/10);
+        const x1 = cx + Math.cos(a) * (r - 24);
+        const y1 = cy + Math.sin(a) * (r - 24);
+        const x2 = cx + Math.cos(a) * (r - 10);
+        const y2 = cy + Math.sin(a) * (r - 10);
+        ctx.strokeStyle = "rgba(255,255,255,.18)";
+        ctx.beginPath();
+        ctx.moveTo(x1,y1);
+        ctx.lineTo(x2,y2);
+        ctx.stroke();
+      }
+
+      // center ring
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,.10)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 60, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // labels
+      ctx.fillStyle = "rgba(255,255,255,.65)";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("0", cx - 102, cy + 64);
+      ctx.fillText(fmt(maxScale, 1), cx + 104, cy + 64);
+    }
+
+    function drawChart(canvasId, points, mode = "flow"){
+      const canvas = el(canvasId);
+      const ctx = canvas.getContext("2d");
+      const W = canvas.width;
+      const H = canvas.height;
+
+      ctx.clearRect(0,0,W,H);
+
+      const pad = { l: 70, r: 24, t: 22, b: 48 };
+      const w = W - pad.l - pad.r;
+      const h = H - pad.t - pad.b;
+
+      // background grid
+      ctx.fillStyle = "rgba(255,255,255,.00)";
+      ctx.fillRect(0,0,W,H);
+
+      ctx.strokeStyle = "rgba(255,255,255,.08)";
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i <= 5; i++){
+        const y = pad.t + (h * i / 5);
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(W - pad.r, y);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i <= 6; i++){
+        const x = pad.l + (w * i / 6);
+        ctx.beginPath();
+        ctx.moveTo(x, pad.t);
+        ctx.lineTo(x, H - pad.b);
+        ctx.stroke();
+      }
+
+      if (points.length < 2){
+        ctx.fillStyle = "rgba(255,255,255,.6)";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("Aguardando dados suficientes para desenhar a série...", pad.l, pad.t + 30);
+        return;
+      }
+
+      const values = mode === "flow" ? points.map(p => p.flow) : points.map(p => p.total);
+      const minV = Math.min(...values);
+      const maxV = Math.max(...values);
+      const span = Math.max(maxV - minV, 0.001);
+
+      const xStep = w / (points.length - 1);
+
+      function yScale(v){
+        return pad.t + h - ((v - minV) / span) * h;
+      }
+
+      // area
+      ctx.beginPath();
+      ctx.moveTo(pad.l, yScale(values[0]));
+      values.forEach((v, i) => {
+        const x = pad.l + i * xStep;
+        const y = yScale(v);
+        ctx.lineTo(x, y);
+      });
+      ctx.lineTo(pad.l + (values.length - 1) * xStep, H - pad.b);
+      ctx.lineTo(pad.l, H - pad.b);
+      ctx.closePath();
+      const areaGrad = ctx.createLinearGradient(0, pad.t, 0, H - pad.b);
+      areaGrad.addColorStop(0, "rgba(76,201,240,.30)");
+      areaGrad.addColorStop(1, "rgba(76,201,240,0)");
+      ctx.fillStyle = areaGrad;
+      ctx.fill();
+
+      // line
+      ctx.beginPath();
+      values.forEach((v, i) => {
+        const x = pad.l + i * xStep;
+        const y = yScale(v);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      const lineGrad = ctx.createLinearGradient(0, 0, W, 0);
+      lineGrad.addColorStop(0, "#4cc9f0");
+      lineGrad.addColorStop(0.5, "#7c6cff");
+      lineGrad.addColorStop(1, "#2ee59d");
+      ctx.strokeStyle = lineGrad;
+      ctx.lineWidth = 3.2;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.stroke();
+
+      // points
+      ctx.fillStyle = "#fff";
+      values.forEach((v, i) => {
+        const x = pad.l + i * xStep;
+        const y = yScale(v);
+        ctx.beginPath();
+        ctx.arc(x, y, i === values.length - 1 ? 5.5 : 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // axis labels
+      ctx.fillStyle = "rgba(255,255,255,.72)";
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "right";
+      for (let i = 0; i <= 5; i++){
+        const v = minV + (span * (5 - i) / 5);
+        const y = pad.t + (h * i / 5) + 4;
+        ctx.fillText(fmt(v, 2), pad.l - 10, y);
+      }
+
+      const timeLabels = [];
+      const step = Math.max(1, Math.floor(points.length / 6));
+      ctx.textAlign = "center";
+      for (let i = 0; i < points.length; i += step){
+        const x = pad.l + i * xStep;
+        const d = new Date(points[i].t);
+        const label = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+        timeLabels.push({ x, label });
+      }
+      timeLabels.forEach(tp => ctx.fillText(tp.label, tp.x, H - 20));
+
+      // border axis line
+      ctx.strokeStyle = "rgba(255,255,255,.14)";
+      ctx.beginPath();
+      ctx.moveTo(pad.l, pad.t);
+      ctx.lineTo(pad.l, H - pad.b);
+      ctx.lineTo(W - pad.r, H - pad.b);
+      ctx.stroke();
+    }
+
+    function refreshUI(){
+      const points = lastWindow(10 * 60 * 1000);
+      const stats = getStats(points);
+
+      updateSummary(stats);
+      updateBars(stats);
+      updateEvents(stats);
+      drawGauge(stats.current);
+      drawChart("flowChart", points, "flow");
+      drawChart("totalChart", points, "total");
+
+      const alerts = buildAlerts(stats);
+      const alertText = alerts.join(" | ");
+      lastAlertText = alertText;
+      el("connectionLabel").textContent = "Ao vivo";
+      if (alerts[0] !== "Nenhum alerta crítico no momento." && stats.stability < 55){
+        el("statusLine").classList.add("warn");
+      } else {
+        el("statusLine").classList.remove("warn");
+      }
+    }
+
+    async function atualizar(){
+      try{
+        const response = await fetch(API_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const data = await response.json();
+        const flow = Number(data.flow);
+        const total = Number(data.total);
+
+        if (!Number.isFinite(flow) || !Number.isFinite(total)){
+          throw new Error("JSON inválido");
+        }
+
+        pushHistory(flow, total);
+        lastOkFetch = new Date();
+        lastFlow = flow;
+        lastTotal = total;
+
+        el("connectionLabel").textContent = "Dados recebidos em tempo real";
+        el("connectionLabel").classList.remove("error");
+
+        // Monitor de fluxo sustentado muito baixo para possível vazamento
+        if (flow > FLOW_THRESHOLD && flow < 0.35){
+          if (!sustainedLowFlowStart) sustainedLowFlowStart = Date.now();
+        } else {
+          sustainedLowFlowStart = null;
+        }
+
+        if (sustainedLowFlowStart){
+          const elapsed = (Date.now() - sustainedLowFlowStart) / 1000;
+          if (elapsed > 120){
+            lastAlertText = "Possível vazamento: fluxo baixo persistente por mais de 2 minutos.";
+          }
+        }
+
+        refreshUI();
+      }catch(err){
+        el("connectionLabel").textContent = "Falha de conexão";
+        el("connectionLabel").classList.add("error");
+        el("statusLine").textContent = "Erro ao conectar ao servidor. Verifique se o backend está ativo e se o endpoint /vazao responde corretamente.";
+        el("reportText").innerHTML = `
+          Não foi possível obter novos dados do servidor.
+          Verifique a conexão Wi-Fi do ESP32, a disponibilidade do backend e o formato da resposta JSON.
+          <br><br>
+          <strong>Falha atual:</strong> ${err.message}
+        `;
+      }
+    }
+
+    function resetHistory(){
+      history.length = 0;
+      lastOkFetch = null;
+      lastFlow = null;
+      lastTotal = null;
+      sustainedLowFlowStart = null;
+
+      el("flowValue").textContent = "--";
+      el("totalValue").textContent = "--";
+      el("avgValue").textContent = "--";
+      el("peakValue").textContent = "--";
+      el("trendValue").textContent = "--";
+      el("dailyValue").textContent = "--";
+      el("stabilityValue").textContent = "--";
+      el("updatedValue").textContent = "--";
+      el("gaugeText").textContent = "--";
+      el("deltaValue").textContent = "--";
+      el("qualityValue").textContent = "--";
+      el("lastHourValue").textContent = "--";
+      el("alertValue").textContent = "Sem alertas";
+      el("statusLine").textContent = "Histórico local limpo. Aguardando novas leituras...";
+      el("eventList").innerHTML = "";
+      el("historyEvents").innerHTML = "";
+      el("reportText").innerHTML = "Histórico local limpo. Assim que o sensor enviar novas leituras, a análise será recalculada.";
+      drawGauge(0);
+      drawChart("flowChart", [], "flow");
+      drawChart("totalChart", [], "total");
+    }
+
+    // boot
+    drawGauge(0);
+    drawChart("flowChart", [], "flow");
+    drawChart("totalChart", [], "total");
+    atualizar();
+    setInterval(atualizar, SAMPLE_INTERVAL_MS);
+    window.addEventListener("resize", refreshUI);
+  </script>
+</body>
+</html>

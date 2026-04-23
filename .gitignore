@@ -1,1 +1,4 @@
 venv
+.env
+water_flow_meter/arduino_secrets.h
+__pycache__/
