@@ -6,26 +6,25 @@
 #include <coap-simple.h>
 
 // ======================================================
-// WIFI
+// WIFI e ThingsBoard Config
 // ======================================================
 const char* ssid = "SamuelWifi";
 const char* password = "zvn1829d";
 
-// IP do backend CoAP
-IPAddress serverIP(172, 22, 239, 163);
-const uint16_t serverPort = 5683;
-const char* coapResource = "vazao";   // recurso CoAP: coap://172.22.239.163:5683/vazao
+// Domínio do ThingsBoard (pode ser o demo ou a sua instância própria)
+const char* tb_host = "demo.thingsboard.io"; 
+const char* TOKEN = "GWCiZFYxsqPZxNfnWmGQ"; 
+
+IPAddress serverIP; // Será resolvido no setup via DNS
+const int coapPort = 5683;
+
+WiFiUDP udp;
+Coap coap(udp);
 
 // ======================================================
 // OLED Heltec
 // ======================================================
 SSD1306Wire display(0x3C, SDA_OLED, SCL_OLED);
-
-// ======================================================
-// CoAP
-// ======================================================
-WiFiUDP udp;
-Coap coap(udp);
 
 // ======================================================
 // Sensor YF-S201
@@ -35,22 +34,8 @@ volatile uint32_t pulseCount = 0;
 
 unsigned long lastMeasureTime = 0;
 unsigned long lastSendTime = 0;
-unsigned long lastWifiCheck = 0;
-
 float totalLiters = 0.0f;
 
-// Janela e suavização
-const uint8_t WINDOW_SIZE = 8; // 8 amostras de 250 ms = 2 s
-float flowWindow[WINDOW_SIZE] = {0};
-uint8_t flowIndex = 0;
-bool flowWindowFilled = false;
-
-float filteredFlow = 0.0f; // média móvel exponencial
-const float ALPHA = 0.30f;  // 0.0 = muito suave, 1.0 = sem filtro
-
-// ======================================================
-// Funções energia OLED
-// ======================================================
 void VextON() {
   pinMode(Vext, OUTPUT);
   digitalWrite(Vext, LOW);
@@ -66,144 +51,50 @@ void displayReset() {
   delay(1);
 }
 
-// ======================================================
-// Interrupt sensor
-// ======================================================
 void IRAM_ATTR pulseCounter() {
   pulseCount++;
 }
 
-// ======================================================
-// Utilitários
-// ======================================================
-float readAndResetPulses() {
-  noInterrupts();
-  uint32_t pulses = pulseCount;
-  pulseCount = 0;
-  interrupts();
-  return (float)pulses;
-}
-
-void pushFlowSample(float value) {
-  flowWindow[flowIndex] = value;
-  flowIndex = (flowIndex + 1) % WINDOW_SIZE;
-  if (flowIndex == 0) {
-    flowWindowFilled = true;
-  }
-}
-
-float getFlowAverage() {
-  uint8_t count = flowWindowFilled ? WINDOW_SIZE : flowIndex;
-  if (count == 0) return 0.0f;
-
-  float sum = 0.0f;
-  for (uint8_t i = 0; i < count; i++) {
-    sum += flowWindow[i];
-  }
-  return sum / count;
-}
-
-float getFlowMin() {
-  uint8_t count = flowWindowFilled ? WINDOW_SIZE : flowIndex;
-  if (count == 0) return 0.0f;
-
-  float m = flowWindow[0];
-  for (uint8_t i = 1; i < count; i++) {
-    if (flowWindow[i] < m) m = flowWindow[i];
-  }
-  return m;
-}
-
-float getFlowMax() {
-  uint8_t count = flowWindowFilled ? WINDOW_SIZE : flowIndex;
-  if (count == 0) return 0.0f;
-
-  float m = flowWindow[0];
-  for (uint8_t i = 1; i < count; i++) {
-    if (flowWindow[i] > m) m = flowWindow[i];
-  }
-  return m;
+// Callback para confirmar recebimento (opcional, mas bom para debug)
+void callback_response(CoapPacket &packet, IPAddress ip, int port) {
+  Serial.println("ACK recebido do ThingsBoard!");
 }
 
 // ======================================================
-// Envio CoAP
+// Envio para nuvem (CoAP com JSON)
 // ======================================================
-void sendToServer(float rawFlow, float smoothedFlow, float total, float lph, uint32_t pulses, float avgWindow) {
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  // JSON compacto para reduzir payload no UDP
-  char payload[220];
-  snprintf(payload, sizeof(payload),
-           "{\"flow\":%.2f,\"smooth\":%.2f,\"avg\":%.2f,\"total\":%.3f,\"lph\":%.2f,\"pulses\":%lu}",
-           rawFlow, smoothedFlow, avgWindow, total, lph, (unsigned long)pulses);
-
-  // Envio não-confirmável para ficar mais leve e fluido
- coap.send(
-  serverIP,
-  serverPort,
-  coapResource,
-  COAP_NONCON,
-  COAP_PUT,
-  nullptr,
-  0,
-  (const uint8_t*)payload,
-  strlen(payload),
-  COAP_APPLICATION_JSON
-);
-
-  Serial.print("CoAP enviado: ");
-  Serial.println(payload);
-}
-
-// ======================================================
-// WiFi
-// ======================================================
-void ensureWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-
-  static bool reconnecting = false;
-
-  if (!reconnecting) {
-    reconnecting = true;
-    Serial.println("WiFi caiu, tentando reconectar...");
-    WiFi.disconnect();
-    WiFi.begin(ssid, password);
-  }
-
-  if (millis() - lastWifiCheck >= 3000) {
-    lastWifiCheck = millis();
-    Serial.print("Status WiFi: ");
-    Serial.println(WiFi.status());
-  }
-
+void sendToServer(float flow, float total) {
   if (WiFi.status() == WL_CONNECTED) {
-    reconnecting = false;
-    Serial.println("WiFi reconectado!");
-    Serial.print("IP ESP32: ");
-    Serial.println(WiFi.localIP());
+    
+    // 1. Monta a rota (URI) exigida pelo ThingsBoard
+    String uri = String("api/v1/") + TOKEN + "/telemetry";
+    
+    // 2. Monta o payload em formato JSON
+    String payload = "{\"flow\":" + String(flow, 2) + ",\"total\":" + String(total, 3) + "}";
+
+    Serial.print("Enviando via CoAP: ");
+    Serial.println(payload);
+
+    // 3. Dispara o pacote UDP para a nuvem
+    uint16_t msgid = coap.send(
+      serverIP, 
+      coapPort, 
+      uri.c_str(), 
+      COAP_CON,   // Mensagem Confirmável (exige ACK do servidor)
+      COAP_POST,  // ThingsBoard exige POST para telemetria
+      NULL, 
+      0, 
+      (uint8_t *)payload.c_str(), 
+      payload.length(),
+      COAP_APPLICATION_JSON
+    );
+    
+    if(msgid > 0) {
+      Serial.println("Pacote despachado na rede!");
+    } else {
+      Serial.println("Falhou ao tentar enviar pacote.");
+    }
   }
-}
-
-// ======================================================
-// OLED
-// ======================================================
-void updateOLED(float rawFlow, float smoothed, float lph, float avgFlow, float minFlow, float maxFlow, float total) {
-  display.clear();
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-
-  display.drawString(0, 0, "YF-S201 / ESP32");
-
-  if (rawFlow < 0.01f) {
-    display.drawString(0, 14, "Vazao: sem fluxo");
-  } else {
-    display.drawString(0, 14, "Vazao: " + String(rawFlow, 2) + " L/min");
-    display.drawString(0, 26, "Suave: " + String(smoothed, 2) + " L/min");
-  }
-
-  display.drawString(0, 38, "L/h:   " + String(lph, 2));
-  display.drawString(0, 48, "Tot: " + String(total, 3) + " L");
-
-  display.display();
 }
 
 // ======================================================
@@ -217,113 +108,77 @@ void setup() {
   display.init();
   display.flipScreenVertically();
   display.setFont(ArialMT_Plain_10);
-
-  display.clear();
-  display.drawString(0, 0, "Inicializando Heltec...");
-  display.display();
-  delay(800);
-
-  // Sensor
+  
   pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(FLOW_SENSOR_PIN), pulseCounter, RISING);
 
-  // WiFi
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false); // reduz latência e melhora estabilidade
+  Serial.println("Conectando WiFi...");
   WiFi.begin(ssid, password);
-
-  display.clear();
-  display.drawString(0, 0, "Conectando WiFi...");
-  display.display();
-
-  Serial.print("Conectando WiFi");
   while (WiFi.status() != WL_CONNECTED) {
-    delay(400);
+    delay(500);
     Serial.print(".");
-    display.clear();
-    display.drawString(0, 0, "Conectando WiFi");
-    display.drawString(0, 14, String("Status: ") + WiFi.status());
-    display.display();
   }
-
-  Serial.println();
-  Serial.println("WiFi conectado!");
-  Serial.print("IP ESP32: ");
-  Serial.println(WiFi.localIP());
-
-  // CoAP
-  coap.start(serverPort);
+  
+  Serial.println("\nWiFi conectado!");
+  
+  // Resolve o domínio do ThingsBoard para pegar o IP (DNS)
+  WiFi.hostByName(tb_host, serverIP);
+  Serial.print("IP do ThingsBoard resolvido: ");
+  Serial.println(serverIP);
 
   display.clear();
   display.drawString(0, 0, "WiFi conectado!");
-  display.drawString(0, 14, WiFi.localIP().toString());
-  display.drawString(0, 30, "CoAP ativo");
+  display.drawString(0, 16, WiFi.localIP().toString());
   display.display();
-  delay(1500);
+  delay(2000);
+
+  // Inicia o CoAP
+  coap.response(callback_response);
+  coap.start();
 
   lastMeasureTime = millis();
-  lastSendTime = millis();
-  lastWifiCheck = millis();
 }
 
 // ======================================================
 // Loop
 // ======================================================
 void loop() {
-  ensureWiFi();
+  // Mantém a escuta do CoAP ativa (para pegar o ACK do ThingsBoard)
   coap.loop();
 
   unsigned long now = millis();
 
-  // Amostragem mais fluida: 250 ms
-  if (now - lastMeasureTime >= 250) {
-    unsigned long elapsed = now - lastMeasureTime;
-    lastMeasureTime = now;
+  // Atualiza OLED a cada 1 segundo
+  if (now - lastMeasureTime >= 1000) {
+    lastMeasureTime += 1000;
 
-    float pulses = readAndResetPulses();
+    noInterrupts();
+    uint32_t pulses = pulseCount;
+    pulseCount = 0;
+    interrupts();
 
-    // Fórmula do YF-S201:
-    // aproximadamente 7.5 pulsos por segundo = 1 L/min
-    // aqui usamos o tempo real decorrido para ficar mais preciso
-    float flowLMin = 0.0f;
-    if (elapsed > 0) {
-      float pulsesPerSecond = (pulses * 1000.0f) / (float)elapsed;
-      flowLMin = pulsesPerSecond / 7.5f;
+    float flowLMin = pulses / 7.5f;
+    float flowLHour = flowLMin * 60.0f;
+    totalLiters += flowLMin / 60.0f;
+
+    display.clear();
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+    display.drawString(0, 0, "YF-S201 -> ThingsBoard");
+
+    if (flowLMin < 0.01f) {
+      display.drawString(0, 16, "Vazao: sem fluxo");
+    } else {
+      display.drawString(0, 16, "Vazao: " + String(flowLMin, 2) + " L/min");
+      display.drawString(0, 30, "L/h:   " + String(flowLHour, 2));
     }
 
-    // Filtro exponencial para suavizar ruído
-    filteredFlow = (filteredFlow == 0.0f) ? flowLMin : (ALPHA * flowLMin + (1.0f - ALPHA) * filteredFlow);
+    display.drawString(0, 46, "Total: " + String(totalLiters, 3) + " L");
+    display.display();
 
-    float flowLHour = flowLMin * 60.0f;
-    totalLiters += (flowLMin * ((float)elapsed / 1000.0f)) / 60.0f;
-
-    pushFlowSample(filteredFlow);
-
-    float avgFlow = getFlowAverage();
-    float minFlow = getFlowMin();
-    float maxFlow = getFlowMax();
-
-    Serial.print("Pulsos: ");
-    Serial.print((unsigned long)pulses);
-    Serial.print(" | Vazao bruta: ");
-    Serial.print(flowLMin, 2);
-    Serial.print(" L/min | Filtrada: ");
-    Serial.print(filteredFlow, 2);
-    Serial.print(" L/min | Media: ");
-    Serial.print(avgFlow, 2);
-    Serial.print(" L/min | Total: ");
-    Serial.print(totalLiters, 3);
-    Serial.println(" L");
-
-    updateOLED(flowLMin, filteredFlow, flowLHour, avgFlow, minFlow, maxFlow, totalLiters);
-
-    // Envia a cada 5 segundos
-    if (now - lastSendTime >= 5000) {
-      sendToServer(flowLMin, filteredFlow, totalLiters, flowLHour, (uint32_t)pulses, avgFlow);
+    // Envia os dados via CoAP a cada 5 segundos
+    if (now - lastSendTime > 100) {
+      sendToServer(flowLMin, totalLiters);
       lastSendTime = now;
     }
   }
-
-  // Pequena pausa para aliviar o loop sem travar a leitura
-  delay(2);
 }
