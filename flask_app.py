@@ -22,7 +22,7 @@ def get_vazao():
         return jsonify({"error": "Configuração da API ausente no .env"}), 500
 
     # Endpoint para pegar as últimas telemetrias (flow e total)
-    url = f"https://{THINGSBOARD_HOST}/api/plugins/telemetry/DEVICE/{DEVICE_ID}/values/timeseries?keys=flow,total"
+    url = f"https://{THINGSBOARD_HOST}/api/plugins/telemetry/DEVICE/{DEVICE_ID}/values/timeseries?keys=f,t"
     
     # O ThingsBoard exige o prefixo 'ApiKey ' antes da chave no cabeçalho
     headers = {
@@ -38,8 +38,8 @@ def get_vazao():
         dados_brutos = response.json()
 
         # Extrai os valores do formato de série temporal do ThingsBoard
-        flow = dados_brutos.get("flow", [{}])[0].get("value", 0)
-        total = dados_brutos.get("total", [{}])[0].get("value", 0)
+        flow = dados_brutos.get("f", [{}])[0].get("value", 0)
+        total = dados_brutos.get("t", [{}])[0].get("value", 0)
 
         return jsonify({
             "flow": float(flow),
