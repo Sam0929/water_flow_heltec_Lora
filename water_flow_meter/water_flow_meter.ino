@@ -52,11 +52,6 @@ void IRAM_ATTR pulseCounter() {
   pulseCount++;
 }
 
-// Callback para confirmar recebimento (opcional, mas bom para debug)
-void callback_response(CoapPacket &packet, IPAddress ip, int port) {
-  Serial.println("ACK recebido do ThingsBoard!");
-}
-
 // ======================================================
 // Envio para nuvem (CoAP com JSON)
 // ======================================================
@@ -66,8 +61,9 @@ void sendToServer(float flow, float total) {
     // 1. Monta a rota (URI) exigida pelo ThingsBoard
     String uri = String("api/v1/") + TOKEN + "/telemetry";
     
-    // 2. Monta o payload em formato JSON
-    String payload = "{\"flow\":" + String(flow, 2) + ",\"total\":" + String(total, 3) + "}";
+    // 2. Monta o payload
+    char payload[40]; 
+    snprintf(payload, sizeof(payload), "{\"f\":%.2f,\"t\":%.3f}", flow, total);
 
     Serial.print("Enviando via CoAP: ");
     Serial.println(payload);
@@ -76,13 +72,13 @@ void sendToServer(float flow, float total) {
     uint16_t msgid = coap.send(
       serverIP, 
       coapPort, 
-      uri.c_str(), 
-      COAP_CON,   // Mensagem Confirmável (exige ACK do servidor)
+      uri.c_str(),
+      COAP_NONCON,
       COAP_POST,  // ThingsBoard exige POST para telemetria
       NULL, 
       0, 
-      (uint8_t *)payload.c_str(), 
-      payload.length(),
+      (uint8_t *)payload, 
+      strlen(payload),
       COAP_APPLICATION_JSON
     ); 
     
@@ -130,7 +126,6 @@ void setup() {
   delay(2000);
 
   // Inicia o CoAP
-  coap.response(callback_response);
   coap.start();
 
   lastMeasureTime = millis();
@@ -140,8 +135,6 @@ void setup() {
 // Loop
 // ======================================================
 void loop() {
-  // Mantém a escuta do CoAP ativa (para pegar o ACK do ThingsBoard)
-  coap.loop();
 
   unsigned long now = millis();
 
@@ -173,7 +166,7 @@ void loop() {
     display.display();
 
     // Envia os dados via CoAP a cada 5 segundos
-    if (now - lastSendTime > 5000) {
+    if (now - lastSendTime > 1000) {
       sendToServer(flowLMin, totalLiters);
       lastSendTime = now;
     }
